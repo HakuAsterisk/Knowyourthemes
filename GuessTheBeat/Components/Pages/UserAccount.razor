@@ -1,0 +1,34 @@
+@page "/UserAccount"
+@inject GuessTheBeat.Components.Services.AnimeSongService AnimeSongService
+@rendermode InteractiveServer
+@inject IJSRuntime JSRuntime
+
+<h3>Your MAL / Anilist account: </h3><br>
+
+<input @bind-value="Username" />
+
+@if (userInfo == null)
+{
+    <p>Loading...</p>
+}
+else if (userInfo.UserInfo == null)
+{
+    <p>No image details available.</p>
+}
+else
+{
+    <div>
+        <p>ID: @userInfo.UserInfo.Id</p>
+    </div>
+}
+
+
+@code {
+    public string? Username { get; set; }
+
+    private GuessTheBeat.Components.Models.GetUser userInfo;
+    protected override async Task OnInitializedAsync()
+    {
+        userInfo = await AnimeSongService.GetUserInfoAsync(Username);
+    }
+}
