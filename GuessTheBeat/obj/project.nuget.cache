@@ -1,8 +1,11 @@
 {
   "version": 2,
-  "dgSpecHash": "JMvK9fyeDMU=",
+  "dgSpecHash": "6rHqEgKrUtw=",
   "success": true,
   "projectFilePath": "C:\\Users\\35844\\Desktop\\GuessTheBeat\\GuessTheBeat.csproj",
-  "expectedPackageFiles": [],
+  "expectedPackageFiles": [
+    "C:\\Users\\35844\\.nuget\\packages\\system.text.encodings.web\\8.0.0\\system.text.encodings.web.8.0.0.nupkg.sha512",
+    "C:\\Users\\35844\\.nuget\\packages\\system.text.json\\8.0.4\\system.text.json.8.0.4.nupkg.sha512"
+  ],
   "logs": []
 }
