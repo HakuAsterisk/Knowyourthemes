@@ -13,6 +13,7 @@ namespace GuessTheBeat.Components.Models{
     // This is the data class for the API response
     public class AnimeData
     {
+
         [JsonPropertyName("node")]
         public AnimeNode Node { get; set; }
     }
@@ -26,6 +27,10 @@ namespace GuessTheBeat.Components.Models{
 
         [JsonPropertyName("main_picture")]
         public MainPicture MainPicture { get; set; }
+
+        // Move media_type to this class
+        [JsonPropertyName("media_type")]
+        public string MediaType { get; set; }
     }
 
     // Model for the "main_picture" object with image URLs

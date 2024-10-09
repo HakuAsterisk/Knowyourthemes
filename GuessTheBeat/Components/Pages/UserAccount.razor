@@ -69,28 +69,51 @@
 
 }
 
-<div>
-    <h3>Anime List</h3>
+<div class="container mt-4">
+    <h3 class="mb-4">Anime List</h3>
 
-    <input type="text" @bind="username" placeholder="Enter username" /><br>
-    <div></div><br>
-    <button @onclick="FetchMalAnimeList">MyAnimeList Account</button>
-    <button @onclick="FetchAniList">AniList Account</button>
+    <div class="form-group">
+        <div class="col-2">
+        <input type="text" class="form-control" @bind="username" placeholder="Enter username" />
+        </div>
+    </div>
+    <div class="btn-group-2">
+        <button class="btn btn-primary" @onclick="FetchMalAnimeList">MyAnimeList Account</button>
+        <button class="btn btn-secondary" @onclick="FetchAniList">AniList Account</button>
+    </div>
 
-    @if (isLoading)
-    {
-        <p>Loading...</p>
-    }
-    else if (animeList.Count != 0 && idList.Count == 0)
-    {
-        <p>MyAnimeList account loaded!</p>
-    }
-    else if (animeList.Count == 0 && idList.Count != 0)
-    {
-        <p>AniList account loaded!</p>
-    } 
-    else 
-    {
-        <p>Could not find that account...</p>
-    }
+    <div class="col-3">
+        @if (isLoading)
+        {
+            <div class="alert alert-info" role="alert">Loading...</div>
+        }
+        else if (animeList.Count != 0 && idList.Count == 0)
+        {
+            <div class="alert alert-success" role="alert">MyAnimeList account loaded!</div>
+        }
+        else if (animeList.Count == 0 && aniList.Count != 0)
+        {
+            <div class="alert alert-success" role="alert">AniList account loaded!</div>
+        }
+        else
+        {
+            <div class="alert alert-danger" role="alert">Could not find that account...</div>
+        }
+    </div>
 </div>
+
+<div>
+@foreach (var anime in animeList)
+{
+    <tr>
+        <td>@anime.Id</td>
+    </tr>
+}
+@foreach (var anime in aniList)
+{
+    <tr>
+        <td>@anime.Id</td>
+    </tr>
+}
+</div>
+

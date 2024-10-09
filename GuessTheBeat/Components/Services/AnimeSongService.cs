@@ -1,4 +1,5 @@
 // Components/Services/AnimeSongService.cs
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -18,17 +19,11 @@ namespace GuessTheBeat.Components.Services
     public class AnimeSongService
     {
         private readonly HttpClient _httpClient;
+        private static readonly Random _random = new Random();
 
         public AnimeSongService(HttpClient httpClient)
         {
         _httpClient = httpClient;
-        }
-
-        public async Task<AnimeImage> GetAnimeImageAsync(int imageId)
-        {
-            var response = await _httpClient.GetAsync($"https://api.animethemes.moe/image/{imageId}");
-            response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<AnimeImage>();
         }
 
         public async Task<GetAnime> GetAnimeInfoAsync(string slug)
@@ -40,27 +35,40 @@ namespace GuessTheBeat.Components.Services
         
 //----------------------------------MYANIMELIST-----------------------------
 
-        public async Task<List<AnimeNode>> GetMediaListAsync(string query)
-        {
-        // Build the URL
-        var malUrl = "https://api.myanimelist.net/v2/users/" + query + "/animelist?limit=50&status=completed";
-        
-        var request = new HttpRequestMessage(HttpMethod.Get, malUrl);
-        request.Headers.Add("X-MAL-CLIENT-ID", "f1310d1d225d6ec4f0107e341a2788ad");
-        
-        var response = await _httpClient.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-        
-        var responseContent = await response.Content.ReadAsStringAsync();
-        var root = JsonSerializer.Deserialize<GetMalUser>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        
-        // Map the API data to your view model (DataList)
-        return root.Data.Select(anime => new AnimeNode
+    public async Task<List<AnimeNode>> GetMediaListAsync(string query)
+    {
+    // Build the URL
+    var malUrl = "https://api.myanimelist.net/v2/users/" + query + "/animelist?limit=50&status=completed&fields=media_type";
+
+    var request = new HttpRequestMessage(HttpMethod.Get, malUrl);
+    request.Headers.Add("X-MAL-CLIENT-ID", "f1310d1d225d6ec4f0107e341a2788ad");
+
+    var response = await _httpClient.SendAsync(request);
+    response.EnsureSuccessStatusCode();
+
+    var responseContent = await response.Content.ReadAsStringAsync();
+    var root = JsonSerializer.Deserialize<GetMalUser>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+    // Filter the anime list to only include items with MediaType "tv"
+    var animeList = root.Data
+        .Where(anime => anime.Node.MediaType.Equals("tv", StringComparison.OrdinalIgnoreCase)) // Filter for media type "tv"
+        .Select(anime => new AnimeNode
         {
             Id = anime.Node.Id,
-            Title = anime.Node.Title
-        }).ToList();
-        }
+            Title = anime.Node.Title,
+            MainPicture = anime.Node.MainPicture // Include main picture if needed
+        })
+        .ToList();
+
+    // Shuffle and return 10 unique titles
+    var randomizedList = animeList
+        .OrderBy(x => _random.Next()) // Shuffle
+        .DistinctBy(x => x.Id)        // Ensure uniqueness
+        .Take(10)                     // Take first 10
+        .ToList();
+
+    return randomizedList;
+}
 
 //--------------------ANILIST--------------------------
 
@@ -70,8 +78,9 @@ namespace GuessTheBeat.Components.Services
             query {
                 Page(page: 1, perPage: 50) {
                     mediaList(userName: ""HakuAsterisk"", sort: SCORE_DESC, status: COMPLETED) {
-                        id
                         media {
+                        id
+                        format
                             title {
                                 romaji
                                 english
@@ -114,20 +123,28 @@ namespace GuessTheBeat.Components.Services
             {
                 foreach (var mediaItem in aniUser.Data.Page.MediaList)
                 {
+                    if(mediaItem.Media.Format == "TV"){
                     var animeInfo = new AnimeInfo
                     {
-                        Id = mediaItem.Id,
-                        RomajiTitle = mediaItem.Media?.Title?.Romaji,
-                        EnglishTitle = mediaItem.Media?.Title?.English,
-                        NativeTitle = mediaItem.Media?.Title?.Native
+                        Id = mediaItem.Media.Id,
                     };
 
                     animeInfoList.Add(animeInfo);
+                    }
                 }
             }
+            var randomizedList = animeInfoList
+                                 .OrderBy(x => _random.Next())  // Shuffle
+                                 .DistinctBy(x => x.Id) // Ensure uniqueness
+                                 .Take(10)                     // Take first 10
+                                 .ToList();
 
-            return animeInfoList; // Return the list of AnimeInfo objects
+            return randomizedList; // Return the list of AnimeInfo objects
         }
+
+        //---------------------------- FETCH SONG---------------------------
+
+        //public async Task 
     }
 }
 

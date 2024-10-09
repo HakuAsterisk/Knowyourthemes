@@ -23,9 +23,6 @@ namespace GuessTheBeat.Components.Models
 
     public class MediaListItem
     {
-        [JsonPropertyName("id")]
-        public int Id { get; set; }
-
         [JsonPropertyName("media")]
         public Media Media { get; set; }
 
@@ -38,6 +35,12 @@ namespace GuessTheBeat.Components.Models
 
     public class Media
     {
+        [JsonPropertyName("id")]
+        public int Id { get; set; }
+
+        [JsonPropertyName("format")]
+        public string Format { get; set; }
+
         [JsonPropertyName("title")]
         public MediaTitle Title { get; set; }
     }
