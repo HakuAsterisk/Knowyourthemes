@@ -1,0 +1,481 @@
+@page "/UserAccount"
+@rendermode InteractiveServer
+@inject IJSRuntime JSRuntime
+@inject HttpClient Http
+@inject IJSRuntime JS
+@using System.Text.Json;
+@inject AnimeSongService AnimeSongService
+@using GuessTheBeat.Components.Models;
+<script src="https://vjs.zencdn.net/7.20.3/video.min.js"></script>
+<link href="https://vjs.zencdn.net/7.20.3/video-js.css" rel="stylesheet">
+<style>
+    .suggestion-list {
+        max-height: 300px;    /* Limit the height, allow scrolling if too many items */
+        overflow-y: auto;     /* Scrollable overflow */
+        z-index: 1000;        /* Keep dropdown on top of other content */
+    }
+
+    .suggestion-list .list-group-item {
+        cursor: pointer;      /* Change cursor to pointer for interactivity */
+    }
+
+    .suggestion-list .list-group-item:hover {
+        background-color: #f0f0f0;  /* Slightly darker background on hover */
+    }
+
+    .suggestion-list .list-group-item.active {
+        background-color: #007bff;  /* Default active class color for the selected item */
+        color: white;               /* Ensure text is visible when active */
+    }
+    #audioPlayer {
+        width: 600px;
+    }
+}
+</style>
+
+@code {
+    private readonly HttpClient? _httpClient;
+    private List<AnimeNode> animeList = new List<AnimeNode>();
+    private List<PopularInfo> popList = new List<PopularInfo>();
+    private List<GuessTheBeat.Components.Services.AnimeInfo> aniList = new List<GuessTheBeat.Components.Services.AnimeInfo>();
+    private bool isLoading = true;
+    private string? username = ""; // Property to hold the username input
+    private string searchTerm;
+    private List<FoundResult> foundResults = new List<FoundResult>();
+    private int i = 0;
+    private CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+
+    private int score = 0;
+
+    private string message = "";
+    private List<AnimeResult> animeResults = new List<AnimeResult>();
+    private AnimeResult anime;
+    private bool guessed = false;
+    private bool started = false;
+    private bool done = false;
+    private string reaction = "How'd you even get here?";
+    public string updatedSlug = "";
+    public int round = 0;
+
+        //---------------MYANIMELIST-----------------
+    private async Task FetchMalAnimeList()
+    {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            //handle empty input
+            Console.WriteLine("Username cannot be empty.");
+            return;
+        }
+
+        isLoading = true;
+
+        try
+        {
+            animeList = await AnimeSongService.GetMediaListAsync(username);
+        }
+        catch (Exception ex)
+        {
+            // Handle the error
+            Console.WriteLine($"Error fetching anime list: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    //---------------ANILIST-----------------
+    private async Task FetchAniList()
+    {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            //Handle empty input
+            Console.WriteLine("Username cannot be empty.");
+            return;
+        }
+
+        isLoading = true;
+
+        try
+        {
+            aniList = await AnimeSongService.GetAniListAsync(username);
+        }
+        catch (Exception ex)
+        {
+            //Handle the error
+            Console.WriteLine($"Error fetching anime list: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task FetchRecommended()
+    {
+        isLoading = true;
+
+        try
+        {
+            popList = await AnimeSongService.GetPopularAsync();
+        }
+        catch (Exception ex)
+        {
+            //Handle the error
+            Console.WriteLine($"Error fetching anime list: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+    private async Task ConvertId()
+    {
+        // Ensure we have elements in one of the lists
+        if(animeList.Count != 0)
+        {
+            // Safeguard to prevent index out of range
+            if (i < animeList.Count)
+            {
+                var chosenId = animeList[i].Id; // Assume AnimeNode has an 'Id' property
+                var animeResults = await AnimeSongService.ConvertIds((int)chosenId, "mal");
+                if (animeResults != null && animeResults.Any())
+                {
+                    anime = animeResults.First();
+                    i++; // Increment i to get the next ID next time this is called
+                    round++;
+                    started = true;
+                }
+            } else if (animeList.Count <= i){
+                UpdateReaction();
+                done = true;
+            }
+        }
+        else if (aniList.Count != 0)
+        {
+            // Safeguard to prevent index out of range
+            if (i < aniList.Count)
+            {
+                var chosenId = aniList[i].Id; // Assume AnimeNode has an 'Id' property
+                var animeResults = await AnimeSongService.ConvertIds((int)chosenId, "ani");
+                if (animeResults != null && animeResults.Any())
+                {
+                    anime = animeResults.First();
+                    i++; // Increment i to get the next ID next time this is called
+                    round++;
+                    started = true;
+                }
+            } else if (animeList.Count <= i){
+                UpdateReaction();
+                done = true;
+            }
+        }
+        else if (popList.Count != 0)
+        {
+            // Safeguard to prevent index out of range
+            if (i < popList.Count)
+            {
+                var chosenId = popList[i].Id; // Assume AnimeNode has an 'Id' property
+                var animeResults = await AnimeSongService.ConvertIds((int)chosenId, "ani");
+                if (animeResults != null && animeResults.Any())
+                {
+                    anime = animeResults.First();
+                    i++; // Increment i to get the next ID next time this is called
+                    round++;
+                    started = true;
+                }
+            } else if (animeList.Count <= i){
+                UpdateReaction();
+                done = true;
+            }
+        }
+    }
+    private void UpdateReaction()
+    {
+        switch(score) 
+        {
+        case 0:
+            reaction = "Honestly kinda based to score this low LMAO";
+            break;
+        case 1:
+            reaction = "Wow that's... Hoo boy that's low...";
+            break;
+        case 2:
+            reaction = "Wow that's... Hoo boy that's low...";
+            break;
+        case 3:
+            reaction = "Wow that's unlucky, I'm sure you can do better";
+            break;
+        case 4:
+            reaction = "Wow that's unlucky, I'm sure you can do better";
+            break;
+        case 5:
+            reaction = "Right down the middle, not great not terrible.";
+            break;
+        case 6:
+            reaction = "A pretty good score, nice job.";
+            break;
+        case 7:
+            reaction = "A pretty good score, nice job.";
+            break;
+        case 8:
+            reaction = "That's a great score, I bet I know what your spotify playlists look like...";
+            break;
+        case 9:
+            reaction = "That's a great score, I bet I know what your spotify playlists look like...";
+            break;
+        case 10:
+            reaction = "Did I f!#% up the logic somewhere? That's a perfect score!";
+            break;
+        default:
+            reaction = "How'd you even get here?";
+            break;
+        }
+
+    }
+    private async Task SearchTheme(ChangeEventArgs e)
+    {
+        searchTerm = e.Value.ToString();
+
+        // Cancel any existing delay
+        cancellationTokenSource.Cancel();
+        cancellationTokenSource = new CancellationTokenSource();
+
+        // Wait for 1 second before calling the API
+        try
+        {
+            await Task.Delay(1000, cancellationTokenSource.Token);
+
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                foundResults = await AnimeSongService.SearchAnimeAsync(searchTerm);
+            }
+            else
+            {
+                foundResults.Clear();
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // The delay was canceled; do nothing
+        }
+    }
+    private int selectedIndex = -1;
+
+private async Task HandleKeyDown(KeyboardEventArgs e)
+{
+    if (foundResults != null && foundResults.Count > 0)
+    {
+        if (e.Key == "ArrowDown")
+        {
+            selectedIndex = (selectedIndex + 1) % foundResults.Count;
+            StateHasChanged(); // Refresh to highlight the item
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            selectedIndex = (selectedIndex - 1 + foundResults.Count) % foundResults.Count;
+            StateHasChanged(); // Refresh to highlight the item
+        }
+        else if (e.Key == "Enter" && selectedIndex >= 0)
+        {
+            SelectSuggestion(foundResults[selectedIndex]);
+        }
+    }
+}
+
+    private void SelectSuggestion(FoundResult foundResult)
+    {
+        searchTerm = foundResult.ResultName;
+        foundResults.Clear();
+        // Reset the cancellation token in case needed
+        cancellationTokenSource.Cancel();
+    }
+
+    private async Task ConfirmSelection()
+    {
+        if (searchTerm == anime.AnimeName)
+        {
+            message = "Yep, that's the one!";
+            score++;
+        }
+        else
+        {
+            message = "Nu-uh...";
+        }
+        guessed = true;
+    }
+    private async Task Next()
+    {
+        await ConvertId();
+        // After fetching the next anime, call the JavaScript function to reload the media
+        await JSRuntime.InvokeVoidAsync("updateMediaSources", anime.AudioLink, anime.VideoLink);
+        guessed = false;
+    }
+}
+<script>
+    function updateMediaSources(audioSrc, videoSrc) {
+        var audioPlayer = document.getElementById('audioPlayer');
+        var videoPlayer = document.getElementById('videoPlayer');
+        
+        if (audioPlayer) {
+            audioPlayer.src = audioSrc;
+            audioPlayer.load(); // Reload the audio
+        }
+
+        if (videoPlayer) {
+            videoPlayer.src = videoSrc;
+            videoPlayer.load(); // Reload the video
+        }
+    }
+</script>
+@if (done == false) {
+    <div class="position-fixed top-5 start-0 col-3 p-3">
+        <!-- Anime Box (Collapsible content) -->
+        <div id="animeBox" class="border border-dark p-3">
+            <div class="form-group">
+                <input type="text" class="form-control mt-3" @bind="username" placeholder="Enter username" />
+            </div>
+
+            <div class="btn-group-vertical w-100 mt-3">
+                <button class="btn btn-primary mb-2" @onclick="FetchMalAnimeList">MyAnimeList Account</button>
+                <button class="btn btn-info mb-2" @onclick="FetchAniList">AniList Account</button>
+                <button class="btn btn-warning mb-2" @onclick="FetchRecommended">Grab random popular</button>
+                <button class="btn btn-success" @onclick="ConvertId">Begin</button>
+            </div>
+
+            <div class="mt-3">
+                @if (isLoading)
+                {
+                    <div class="alert alert-info" role="alert">Loading...</div>
+                }
+                else if (animeList.Count != 0 && aniList.Count == 0)
+                {
+                    <div class="alert alert-success" role="alert">MyAnimeList account loaded!</div>
+                }
+                else if (animeList.Count == 0 && aniList.Count != 0)
+                {
+                    <div class="alert alert-success" role="alert">AniList account loaded!</div>
+                }
+                else if (popList.Count != 0)
+                {
+                    <div class="alert alert-success" role="alert">Popular anime loaded!</div>
+                }
+                else
+                {
+                    <div class="alert alert-danger" role="alert">Could not find that account...</div>
+                }
+            </div>
+        </div>
+
+        <!-- Toggle Button Always Visible Below the Box -->
+        <button class="btn btn-secondary w-20 mt-2" type="button" onclick="toggleAnimeBox()">
+            Toggle Box
+        </button>
+    </div>
+
+    <!-- JavaScript to Handle Collapsing -->
+    <script>
+        function toggleAnimeBox() {
+            var animeBox = document.getElementById("animeBox");
+            if (animeBox.style.display === "none") {
+                animeBox.style.display = "block";  // Show the box
+            } else {
+                animeBox.style.display = "none";   // Hide the box
+            }
+        }
+    </script>
+
+
+    <div class="container text-center mt-3">
+
+        <!-- Audio Player Section -->
+
+        <div class="row justify-content-center">
+        <h4 class="mt-1 mb-1">Round @round</h4>
+            @if (anime != null && !string.IsNullOrEmpty(anime.AudioLink))
+            {
+                <div class="col-12">
+                    @if(animeList.Count != 0) 
+                    {
+                        <h4 class="mt-1 mb-1">Score: @score / @animeList.Count</h4>
+                    }
+                    @if(aniList.Count != 0) 
+                    {
+                        <h4 class="mt-1 mb-1">Score: @score / @aniList.Count</h4>
+                    }
+                    @if(popList.Count != 0) 
+                    {
+                        <h4 class="mt-1 mb-1">Score: @score / @popList.Count</h4>
+                    }
+                    <h4 class="mt-3 mb-3">Listen to the theme and guess the show below. Press confirm when you're ready.</h4>
+                    <audio id="audioPlayer" controls class="mb-2">
+                        <source src="@anime.AudioLink" type="audio/mpeg">
+                        Your browser does not support the audio tag.
+                    </audio>
+                </div>
+            }
+        </div>
+
+        <!-- Confirm and Next Buttons -->
+        <div class="row justify-content-center mb-2">
+        @if (started){
+            <div class="col-6 col-md-2">
+                <button class="btn btn-success w-100" @onclick="ConfirmSelection">Confirm</button>
+            </div>
+        }
+        @if (guessed)
+        {    
+            <div class="col-6 col-md-2">
+                <button class="btn btn-success w-100" @onclick="Next">Next Question</button>
+            </div>
+        }
+        </div>
+
+            <!-- Auto-complete functionality -->
+        <div class="row justify-content-center mb-2">
+            <div class="col-12 col-md-4 position-relative">
+                <input type="text" class="form-control mt-2" 
+                    @oninput="SearchTheme" 
+                    @onkeydown="HandleKeyDown"
+                    placeholder="Enter anime name" 
+                    @bind="searchTerm" />
+                    @if (foundResults != null && foundResults.Count > 0)
+                    {
+                    <ul class="suggestion-list list-group mt-2 position-absolute">
+                        @foreach (var foundResult in foundResults)
+                        {
+                            var isSelected = foundResults.IndexOf(foundResult) == selectedIndex;
+                            <li class="list-group-item @((isSelected ? "active" : ""))" @onclick="() => SelectSuggestion(foundResult)">
+                                @foundResult.ResultName
+                            </li>
+                        }
+                    </ul>
+                    }
+            </div>
+        </div>
+        <!-- Video Player Section -->
+        @if (guessed)
+        {
+            <div class="row justify-content-center">
+                <div class="col-12">
+                    <h1>@message</h1>
+                    <h4 class="mb-1">Correct answer: @anime.AnimeName</h4>
+                    <video id="videoPlayer" width="900" height="500" controls>
+                        <source src="@anime.VideoLink" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+            </div>
+
+        }
+    </div>
+} else if (done == true) {
+<div class="container text-center mt-3">
+    <div class="row justify-content-center">
+        <div class="col-12"><h2>Game cleared!</h2></div>
+        <div class="col-12"><h2>Your final score was: @score / 10</h2></div>
+        <div class="col-12"><h2>@reaction</h2></div>
+        <div class="col-12"><h2>Reload if you wanna go agane!</h2></div>
+    </div>
+</div>
+}
