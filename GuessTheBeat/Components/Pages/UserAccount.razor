@@ -1,0 +1,468 @@
+@page "/UserAccount"
+@rendermode InteractiveServer
+@inject IJSRuntime JSRuntime
+@inject HttpClient Http
+@inject IJSRuntime JS
+@using System.Text.Json;
+@inject AnimeSongService AnimeSongService
+@using GuessTheBeat.Components.Models;
+<style>
+    /*css to make the autocomplete look nicer and feel more responsive*/
+    .suggestion-list {
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1000;
+    }
+
+    .suggestion-list .list-group-item {
+        cursor: pointer;
+    }
+
+    .suggestion-list .list-group-item:hover {
+        background-color: #f0f0f0;
+    }
+
+    .suggestion-list .list-group-item.active {
+        background-color: #007bff;
+        color: white;
+    }
+    #audioPlayer {
+        width: 600px;
+    }
+}
+</style>
+@code {
+    private List<AnimeInfo> aniList = new List<AnimeInfo>(); //List for AniList objects
+    private string? username = ""; //MAL or AniList username
+    private string? searchTerm; //for auto-complete
+    private List<FoundResult> foundResults = new List<FoundResult>(); //auto-complete results
+    private int selectedIndex = -1; //auto-complete functionality for choosing list items
+    private int i = 0; //standard incrementing, I need this to presist throughout the runtime hence why it's defined at the start
+    private CancellationTokenSource cancellationTokenSource = new CancellationTokenSource(); //to cancel a delay in auto-complete if neccessary
+    private int score = 0; //keeping score during the game
+    private string message = ""; //to communicate things to user
+    private string warning = "Waiting for input :3";
+    private AnimeResult? anime; //Contains all the neccessary information once a show has been converted into AnimeThemes format
+    private int phase = 0; //To control the flow of the application and visuals.
+    private bool website = false;
+    private bool answered = false;
+    private void UpdateReaction() //To update (s)message at the end of the game according to user score
+    {
+        switch(score) 
+        {
+        case 0:
+            message = "Honestly kinda based to score this low LMAO";
+            break;
+        case 1:
+            message = "Wow that's... Hoo boy that's low...";
+            break;
+        case 2:
+            message = "Wow that's... Hoo boy that's low...";
+            break;
+        case 3:
+            message = "Wow that's unlucky, I'm sure you can do better";
+            break;
+        case 4:
+            message = "Wow that's unlucky, I'm sure you can do better";
+            break;
+        case 5:
+            message = "Right down the middle, not great not terrible.";
+            break;
+        case 6:
+            message = "A pretty good score, nice job.";
+            break;
+        case 7:
+            message = "A pretty good score, nice job.";
+            break;
+        case 8:
+            message = "That's a great score, I bet I know what your spotify playlists look like...";
+            break;
+        case 9:
+            message = "That's a great score, I bet I know what your spotify playlists look like...";
+            break;
+        case 10:
+            message = "Did I f!#% up the logic somewhere? That's a perfect score!";
+            break;
+        default:
+            message = "How'd you even get here?";
+            break;
+        }
+
+    }
+
+    //---------------MYANIMELIST-----------------
+    private async Task FetchMalAnimeList() //Fetching a list of shows matching the account of the username given.
+    {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            //Checking for empty username
+            warning = "Username cannot be empty when pulling for MAL data";
+            return;
+        }
+
+        try
+        {
+            //Clear the list just in case user is somehow pressing buttons several times to prevent crashes and breaking gameflow
+            aniList.Clear();
+            aniList = await AnimeSongService.GetMediaListAsync(username);
+            //Calling AnimeSongService method GetMediaListAsync to pull a list of shows they've watched IN s.username OUT L<AnimeNode>.animeList
+        }
+        catch (Exception ex)
+        {
+            //If pull fails for some reason display error
+            warning = "There was an error fetching your MyAnimeList";
+        }
+        finally
+        {
+            //if pull succeeds, remove infobox and buttons, display begin button.
+            warning = "MyAnimeList account loaded!";
+            website = false;
+            phase = 1;
+        }
+    }
+
+    //---------------ANILIST-----------------
+
+    private async Task FetchAniList() //Fetching a list of shows matching the account of the username given.
+    {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            //Checking for empty username
+            warning = "Username cannot be empty when pulling for AniList data";
+            return;
+        }
+
+        try
+        {
+            //Clear the list just in case user is somehow pressing buttons several times to prevent crashes and breaking gameflow
+            aniList.Clear();
+            aniList = await AnimeSongService.GetAniListAsync(username);
+            //Calling AnimeSongService method GetAniListAsync to pull a list of shows they've watched IN s.username OUT L<AnimeInfo>.aniList
+        }
+        catch (Exception ex)
+        {
+            //If pull fails for some reason display error
+            warning = "There was an error fetching your AniList";
+        }
+        finally
+        {
+            //if pull succeeds, remove infobox and buttons, display begin button.
+            warning = "AniList account loaded!";
+            website = true;
+            phase = 1;
+        }
+    }
+
+    //---------------ANILIST POPULAR-----------------
+
+    private async Task FetchRecommended() //Fetching 10 random anime from the list of 100 most commonly rated shows on AniList
+    {   //an option meant for those who have not listed their shows on a website, but still want to play.
+        try
+        {
+            //Clear the list just in case user is somehow pressing buttons several times to prevent crashes and breaking gameflow
+            aniList.Clear();
+            aniList = await AnimeSongService.GetPopularAsync();
+            //Calling AnimeSongService method GetPopularAsync to pull a list of popular shows OUT L<AnimeInfo>.aniList
+        }
+        catch (Exception ex)
+        {
+            //If pull fails for some reason display error
+            warning = "There was an error fetching the shows";
+        }
+        finally
+        {
+            //if pull succeeds, remove infobox and buttons, display begin button.
+            warning = "Popular shows loaded!";
+            website = true;
+            phase = 1;
+        }
+    }
+
+    //--------------------CONVERT TO ANIMETHEMES---------------------------
+    private async Task ConvertId() //Converting the found list of shows from a MAL or AniList ID into an object containing AnimeThemes data
+    {
+        if(aniList.Count != 0 && website == false) //Checking if we are handling MAL or AniList data
+        {
+            if (i < aniList.Count) //Making sure we aren't overflowing the list of shows
+            {
+                var chosenId = aniList[i].Id; //pick an ID out of the list
+                var animeResults = await AnimeSongService.ConvertId((int)chosenId, "mal");
+                //Calling AnimeSongService method ConvertId to turn the MAL ID into a matching result found through the AnimeThemes API
+                //IN t.chosenId, s.(identifier for weather it's MAL or AniList) OUT L<AnimeResult>? animeResults (it can find multiple)
+
+                if (animeResults != null)
+                {
+                    anime = animeResults.First(); //Check if shows were found, pull the first option.
+                    i++; //Increment the round counter to update the user and also to grab the next show on the list next time method is ran.
+                    phase = 2; //program flow control
+                } else {
+                    //If pull fails for some reason display error
+                    warning = "Could not find this show in AnimeThemes";
+                }
+
+            } else if (aniList.Count <= i){
+                //If the rounds reach the end of the amount of available shows
+                //update the ending message and flow control to the ending screen
+                UpdateReaction();
+                phase = 4;
+            }
+        }
+
+        else if (aniList.Count != 0 && website == true) //Checking if we are handling MAL or AniList data
+        {
+            if (i < aniList.Count) //Making sure we aren't overflowing the list of shows
+            {
+                var chosenId = aniList[i].Id; //pick an ID out of the list
+                var animeResults = await AnimeSongService.ConvertId((int)chosenId, "ani");
+                //Calling AnimeSongService method ConvertId to turn the AniList ID into a matching result found through the AnimeThemes API
+                //IN t.chosenId, s.(identifier for weather it's MAL or AniList) OUT L<AnimeResult>? animeResults (it can find multiple)
+
+                if (animeResults != null)
+                {
+                    anime = animeResults.First(); //Check if shows were found, pull the first option.
+                    i++; //Increment the round counter to update the user and also to grab the next show on the list next time method is ran.
+                    phase = 2; //program flow control
+                }
+            } else if (aniList.Count <= i){
+                //If the rounds reach the end of the amount of available shows
+                //update the ending message and flow control to the ending screen
+                UpdateReaction();
+                phase = 4;
+            }
+        }
+    }
+    //----------------------AUTO-COMPLETE----------------------
+    private async Task SearchTheme(ChangeEventArgs e) //Run search term through the AnimeThemes search API and display results for auto-complete.
+    {
+        searchTerm = e.Value.ToString(); //The searchbar updates on input, grab input.
+
+        cancellationTokenSource.Cancel();
+        cancellationTokenSource = new CancellationTokenSource();
+        //We delay running the search by a second to not overcrowd the API, if more input is added we cancel the delay to avoid
+        //creating longer wait times
+
+        try
+        {
+            await Task.Delay(1000, cancellationTokenSource.Token); //1 sec delay to not stress the AnimeThemes API search endpoint
+
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                foundResults = await AnimeSongService.SearchAnimeAsync(searchTerm); 
+                //If searchfield contains info run it through AnimeSongService method SearchAnimeAsync and display the results.
+                //IN s.searchTerm OUT L<FoundResult>.foundResults
+            }
+            else
+            {
+                foundResults.Clear();
+                //If searchfield is clear, empty the results to not hold up memory
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            //The delay was canceled, do nothing
+        }
+    }
+
+    //--------------SMALLER APPLICATION METHODS----------------
+    private void SelectSuggestion(FoundResult foundResult) //User clicks on a result from the auto-complete which is then passed here
+    {
+        searchTerm = foundResult.ResultName;
+        foundResults.Clear();
+        cancellationTokenSource.Cancel();
+        //We set the chosen auto-complete as user input, clear the results and cancel the wait time.
+    }
+
+    private void ConfirmSelection() //Check if the answer is correct
+    {
+        answered = true;
+        if (searchTerm == anime.AnimeName) //Compare input to answer
+        {
+            message = "Yep, that's the one!";
+            score++; //Communicate to user and add score
+        }
+        else
+        {
+            message = "Nu-uh..."; //Communicate to user
+        }
+
+        searchTerm = string.Empty; //Clearing the search term when a selection is made in preparation for next round
+        phase = 3; //Flowcontrol
+    }
+    private async Task Next()
+    {
+        await ConvertId();
+        //After fetching the next anime, we call a JavaScript function to reload the media
+        await JSRuntime.InvokeVoidAsync("updateMediaSources", anime.AudioLink, anime.VideoLink);
+        answered = false;
+    }
+    private async Task Retry() //Sometimes the audioplayer refuses to load the audio until the video is loaded
+    {                          //this method shows the video for a split second allowing the website to load both, thus giving you access to the audio
+        phase = 3;
+        await Task.Delay(500);
+        await JSRuntime.InvokeVoidAsync("refreshVideo");
+        phase = 2;
+    }
+}
+
+<!-- JAVASCRIPT -->
+<script>
+    //JavaScript to reload video and audio as they need to be refreshed
+    function updateMediaSources(audioSrc, videoSrc) {
+        var audioPlayer = document.getElementById('audioPlayer');
+        var videoPlayer = document.getElementById('videoPlayer');
+        if (audioPlayer) {
+            audioPlayer.src = audioSrc;
+            audioPlayer.load(); // Reload the audio
+        }
+
+        if (videoPlayer) {
+            videoPlayer.src = videoSrc;
+            videoPlayer.load(); // Reload the video
+        }
+    }
+    //Function to load in the video
+    function refreshVideo(){
+        var videoPlayer = document.getElementById('videoPlayer');
+        videoPlayer.play(); 
+        videoPlayer.pause();
+    }
+</script>
+
+<!-- START OF VISUALS -->
+@if (phase <= 3) { //We show the main website visuals until flowcontrol becomes 4 or more in which case we hide everything inside the if statement
+    <div class="position-fixed top-5 start-0 col-3 p-3">
+
+        <!-- Anime Box (Top left) -->
+        @if(phase <= 1){
+        <div id="animeBox" class="border border-dark p-3">
+            <div class="btn-group-vertical w-100 mt-3">
+                @if(phase == 0){ //Once anime has been loaded we hide the buttons below
+                <input type="text" class="form-control mb-2" @bind="username" placeholder="Enter username" />
+                <button class="btn btn-primary mb-2" @onclick="FetchMalAnimeList">MyAnimeList Account</button>
+                <button class="btn btn-info mb-2" @onclick="FetchAniList">AniList Account</button>
+                <button class="btn btn-warning mb-2" @onclick="FetchRecommended">Grab random popular shows instead.</button>
+                }
+                @if(phase == 1){ //Only leaving the begin button
+                <button class="btn btn-success" @onclick="ConvertId">Begin</button>
+                }
+            </div>
+            <div class="mt-3">
+                @if (aniList.Count == 0)
+                {
+                    <div class="alert alert-info text-center" role="alert">@warning</div>
+                }
+                else if (aniList.Count != 0 && website == false)
+                {
+                    <div class="alert alert-success text-center" role="alert">@warning</div>
+                }
+                else if (aniList.Count != 0 && website == true)
+                {
+                    <div class="alert alert-success text-center" role="alert">@warning</div>
+                }
+                else
+                {
+                    <div class="alert alert-danger text-center" role="alert">@warning</div>
+                }
+            </div>
+        </div>
+        }
+    @if(phase == 2){
+    <button class="btn btn-danger" @onclick="Retry">↺</button>
+    <h6>If audio loads but doesn't play try this button :)</h6>
+    }
+    </div>
+    <div class="container text-center mt-3">
+
+        <!-- Audio Player Section -->
+
+        @if(phase > 1 && phase <= 3) { //We show this content when anime is loaded and the game is started
+        <div class="row justify-content-center">
+        <h4 class="mt-1 mb-1">Round @i</h4> <!-- rounds -->
+            @if (anime != null && !string.IsNullOrEmpty(anime.AudioLink))
+            {
+                <div class="col-12">
+                    @if(aniList.Count != 0) 
+                    {
+                        <h4 class="mt-1 mb-1">Score: @score / @aniList.Count</h4>
+                    }
+                    <h4 class="mt-3 mb-3">Listen to the theme and guess the show below. Press confirm when you're ready.</h4>
+                    <audio id="audioPlayer" controls class="mb-2">
+                        <source src="@anime.AudioLink" type="audio/mpeg"> <!-- Audioplayer -->
+                        Your browser does not support the audio tag.
+                    </audio>
+                </div>
+            }
+        </div>
+        }
+        <!-- Confirm and Next Buttons -->
+
+        <div class="row justify-content-center mb-2">
+        @if (phase == 2){
+            <div class="col-6 col-md-2">
+                <button class="btn btn-success w-100" @onclick="ConfirmSelection">Confirm</button> <!-- Confirm guess and Next -->
+            </div>
+        }
+        @if (phase == 3)
+        {    
+            <div class="col-6 col-md-2">
+                <button class="btn btn-success w-100" @onclick="Next">Next Question</button>
+            </div>
+        }
+        </div>
+
+        <!-- Auto-complete functionality -->
+        @if(phase > 1 && phase <= 3){ //We also show this content when anime is loaded and game is started
+        <div class="row justify-content-center mb-2">
+            <div class="col-12 col-md-4 position-relative">
+                <input type="text" class="form-control mt-2" 
+                    @oninput="SearchTheme"
+                    placeholder="Enter anime name" 
+                    @bind="searchTerm" />                   <!-- Text input -->
+                    @if (foundResults != null && foundResults.Count > 0)
+                    {
+                    <ul class="suggestion-list list-group mt-2 position-absolute">
+                        @foreach (var foundResult in foundResults)
+                        {
+                            var isSelected = foundResults.IndexOf(foundResult) == selectedIndex;
+                            <li class="list-group-item @((isSelected ? "active" : ""))" @onclick="() => SelectSuggestion(foundResult)">
+                                @foundResult.ResultName <!-- List items -->
+                            </li>
+                        }
+                    </ul>
+                    }
+            </div>
+        </div>
+        }
+
+        <!-- Video Player Section -->
+
+        @if (phase == 3)
+        {
+            <div class="row justify-content-center">
+                <div class="col-12">
+                    <h1>@message</h1>
+                    @if (answered){
+                    <h4 class="mb-1">Correct answer: @anime.AnimeName</h4>
+                    }
+                    @if(!answered){ //Used to hide the correct answer from those who use the retry button
+                    <h4 class="mb-1">Correct answer: LOLOLOLOLOLOLOLOLOLOLOLOL</h4>
+                    }
+                    <video id="videoPlayer" width="900" height="500" controls> <!-- Videoplayer and correct answer -->
+                        <source src="@anime.VideoLink" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+            </div>
+
+        }
+    </div>
+} else if (phase >= 4) { //Once Flowcontrol is 4 or more we hide all content and replace it with the end screen
+<div class="container text-center mt-3">
+    <div class="row justify-content-center">
+        <div class="col-12"><h2>Game cleared!</h2></div>
+        <div class="col-12"><h2>Your final score was: @score / 10</h2></div> <!-- Ending screen -->
+        <div class="col-12"><h2>@message</h2></div>
+        <div class="col-12"><h2>Reload if you wanna go agane!</h2></div>
+    </div>
+</div>
+}
