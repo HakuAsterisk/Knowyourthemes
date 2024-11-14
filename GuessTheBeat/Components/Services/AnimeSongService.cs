@@ -42,7 +42,7 @@ namespace GuessTheBeat.Components.Services
             var malUrl = "https://api.myanimelist.net/v2/users/" + username + "/animelist?limit=50&status=completed&fields=media_type";
 
             var request = new HttpRequestMessage(HttpMethod.Get, malUrl);
-            request.Headers.Add("X-MAL-CLIENT-ID", "f1310d1d225d6ec4f0107e341a2788ad"); //Add headers to verify API call
+            request.Headers.Add("X-MAL-CLIENT-ID", "ClientID"); //Add headers to verify API call
 
             var response = await _httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode(); //Wait for the response
